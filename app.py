@@ -1,9 +1,5 @@
 """
-app.py
-Main entry point — aiohttp web server that:
-  - Receives Teams messages at POST /api/messages
-  - Receives Jenkins build callbacks at POST /api/callback
-  - Health check at GET /health
+app.py - Main entry point
 """
 import os
 from aiohttp import web
@@ -13,7 +9,6 @@ from botbuilder.schema import Activity
 from bot.deploy_bot import DeployBot
 from config.settings import settings
 
-# ── Bot Framework adapter ────────────────────────────────────
 adapter_settings = BotFrameworkAdapterSettings(
     app_id=settings.APP_ID,
     app_password=settings.APP_PASSWORD,
@@ -23,22 +18,18 @@ bot = DeployBot()
 
 
 async def on_error(context, error):
-    print(f"[ERROR] Unhandled exception: {error}")
+    print(f"[ERROR] {error}")
     await context.send_activity("Something went wrong. Please try again.")
-
 
 adapter.on_turn_error = on_error
 
 
-# ── Route handlers ────────────────────────────────────────────
 async def messages(req: web.Request) -> web.Response:
     if "application/json" not in req.content_type:
-        return web.Response(status=415, text="Unsupported Media Type")
-
+        return web.Response(status=415)
     body = await req.json()
     activity = Activity().deserialize(body)
     auth_header = req.headers.get("Authorization", "")
-
     response = await adapter.process_activity(activity, auth_header, bot.on_turn)
     if response:
         return web.json_response(data=response.body, status=response.status)
@@ -47,10 +38,7 @@ async def messages(req: web.Request) -> web.Response:
 
 async def jenkins_callback(req: web.Request) -> web.Response:
     body = await req.json()
-    app = body.get("app", "unknown")
-    build_number = body.get("build_number", "?")
-    status = body.get("status", "UNKNOWN")
-    print(f"[CALLBACK] Build {build_number} for {app}: {status}")
+    print(f"[CALLBACK] Build {body.get('build_number')} for {body.get('app')}: {body.get('status')}")
     return web.json_response({"received": True})
 
 
@@ -58,18 +46,15 @@ async def health(req: web.Request) -> web.Response:
     return web.json_response({"status": "ok", "bot": "DeployBot"})
 
 
-# ── App factory ───────────────────────────────────────────────
 def create_app() -> web.Application:
-    app = web.Application()
-    app.router.add_post("/api/messages", messages)
-    app.router.add_post("/api/callback", jenkins_callback)
-    app.router.add_get("/health", health)
-    return app
+    application = web.Application()
+    application.router.add_post("/api/messages", messages)
+    application.router.add_post("/api/callback", jenkins_callback)
+    application.router.add_get("/health", health)
+    return application
 
 
 if __name__ == "__main__":
-    # Azure App Service sets PORT env variable — default to 8000
     PORT = int(os.environ.get("PORT", 8000))
-    app = create_app()
     print(f"DeployBot starting on port {PORT}")
-    web.run_app(app, host="0.0.0.0", port=PORT)
+    web.run_app(create_app(), host="0.0.0.0", port=PORT)
